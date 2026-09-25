@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Rédaction Express</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; background: #f4f3ef; margin: 0; padding: 1.5rem 1rem; color: #222; }
+  .card { max-width: 460px; margin: 0 auto; }
+  h1 { font-size: 18px; }
+  input[type=password] { width: 100%; padding: 0.6rem; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 1rem; }
+  .order { background: white; border-radius: 10px; padding: 1rem; margin-bottom: 10px; border: 1px solid #e2e0d8; }
+  .order h3 { margin: 0 0 6px; font-size: 15px; }
+  .order p { margin: 2px 0; font-size: 13px; color: #555; }
+  .order button { margin-top: 10px; width: 100%; padding: 0.6rem; background: #1d1d1b; color: white; border: none; border-radius: 8px; font-size: 14px; }
+  .empty { color: #888; font-size: 14px; text-align: center; padding: 2rem 0; }
+  .refresh { background: none; border: none; color: #777; font-size: 13px; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Commandes en attente</h1>
+  <input type="password" id="password" placeholder="Mot de passe admin" oninput="savePassword()">
+  <button class="refresh" onclick="loadOrders()">↻ Actualiser</button>
+  <div id="orders"></div>
+</div>
+
+<script>
+function savePassword() {
+  localStorage.setItem("admin_password", document.getElementById("password").value);
+}
+
+async function loadOrders() {
+  const pw = document.getElementById("password").value;
+  if (!pw) return;
+  const res = await fetch("/api/orders?password=" + encodeURIComponent(pw));
+  if (!res.ok) {
+    document.getElementById("orders").innerHTML = '<p class="empty">Mot de passe incorrect</p>';
+    return;
+  }
+  const data = await res.json();
+  const container = document.getElementById("orders");
+  if (data.orders.length === 0) {
+    container.innerHTML = '<p class="empty">Aucune commande en attente</p>';
+    return;
+  }
+  container.innerHTML = "";
+  data.orders.forEach(o => {
+    const div = document.createElement("div");
+    div.className = "order";
+    div.innerHTML = `
+      <h3>${o.docType}</h3>
+      <p>Paiement : ${o.payMode} — Code : ${o.transactionCode}</p>
+      <p>Téléphone client : ${o.phone || "non fourni"}</p>
+      <p>Reçu le : ${new Date(o.createdAt).toLocaleString("fr-FR")}</p>
+      <button onclick="confirmOrder('${o.id}')">✓ Confirmer le paiement reçu</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+async function confirmOrder(id) {
+  const pw = document.getElementById("password").value;
+  const res = await fetch(`/api/order/${id}/confirm?password=${encodeURIComponent(pw)}`, { method: "POST" });
+  if (res.ok) {
+    alert("Confirmé ! Le document est en cours de génération pour le client.");
+    loadOrders();
+  } else {
+    alert("Erreur lors de la confirmation.");
+  }
+}
+
+const saved = localStorage.getItem("admin_password");
+if (saved) { document.getElementById("password").value = saved; loadOrders(); }
+</script>
+</body>
+</html>
