@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rédaction Express</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f3ef;
+    margin: 0;
+    padding: 1.5rem 1rem;
+    color: #222;
+  }
+  .card {
+    max-width: 420px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 14px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: #777; margin: 0 0 1.25rem; }
+  .doc-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    padding: 0.9rem 1rem;
+    margin-bottom: 8px;
+    border: 1px solid #e2e0d8;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .doc-btn:hover { background: #faf9f6; }
+  .price { color: #888; font-size: 13px; }
+  .hidden { display: none; }
+  label { display: block; font-size: 13px; margin: 1rem 0 4px; font-weight: 500; }
+  input, textarea {
+    width: 100%;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  button.primary {
+    width: 100%;
+    margin-top: 1.25rem;
+    padding: 0.8rem;
+    background: #1d1d1b;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button.primary:disabled { background: #bbb; }
+  .back { background: none; border: none; color: #777; font-size: 13px; margin-bottom: 1rem; cursor: pointer; padding: 0; }
+  .result-box {
+    white-space: pre-wrap;
+    background: #faf9f6;
+    border: 1px solid #e2e0d8;
+    border-radius: 10px;
+    padding: 1rem;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-top: 1rem;
+  }
+  .loading { text-align: center; padding: 2rem 0; color: #888; font-size: 14px; }
+  .error { color: #b3261e; font-size: 13px; margin-top: 8px; }
+  .paymode { display:flex; gap:8px; margin-top: 1rem; }
+  .paymode button { flex:1; padding: 0.6rem; border-radius: 8px; border: 1px solid #ddd; background: #fff; font-size: 13px; }
+  .paymode button.selected { border-color: #1d1d1b; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="card" id="app">
+
+  <!-- ÉCRAN 1 : choix du document -->
+  <div id="screen-select">
+    <h1>Rédaction Express</h1>
+    <p class="subtitle">Quel document voulez-vous ?</p>
+    <div id="doc-list"></div>
+  </div>
+
+  <!-- ÉCRAN 2 : formulaire guidé -->
+  <div id="screen-form" class="hidden">
+    <button class="back" onclick="goBack()">&larr; Retour</button>
+    <h1 id="form-title"></h1>
+    <div id="form-fields"></div>
+
+    <label>Mode de paiement</label>
+    <div class="paymode">
+      <button type="button" data-mode="tmoney" onclick="selectPay('tmoney')">TMoney</button>
+      <button type="button" data-mode="flooz" onclick="selectPay('flooz')">Flooz</button>
+    </div>
+
+    <div id="pay-instructions" class="hidden" style="margin-top:12px;padding:0.75rem 1rem;background:#faf9f6;border-radius:10px;font-size:13px;"></div>
+
+    <label>Code de transaction reçu après paiement</label>
+    <input id="field-transactionCode" placeholder="Ex : MP240915.1234.A56789">
+
+    <label>Votre numéro (optionnel, pour vous contacter si besoin)</label>
+    <input id="field-phone" placeholder="Ex : 90 12 34 56">
+
+    <button class="primary" id="submit-btn" onclick="submitOrder()">J'ai payé — envoyer ma commande</button>
+    <div class="error hidden" id="form-error"></div>
+  </div>
+
+  <!-- ÉCRAN 3 : en attente de confirmation -->
+  <div id="screen-loading" class="hidden">
+    <div class="loading" id="loading-text">Commande envoyée. En attente de confirmation du paiement…</div>
+  </div>
+
+  <!-- ÉCRAN 4 : résultat -->
+  <div id="screen-result" class="hidden">
+    <h1>Votre document</h1>
+    <div class="result-box" id="result-text"></div>
+    <button class="primary" onclick="downloadResult()">Télécharger (.txt)</button>
+    <button class="back" style="margin-top:12px;" onclick="resetApp()">Nouvelle commande</button>
+  </div>
+
+</div>
+
+<script>
+const DOCUMENTS = [
+  { id: "lettre", label: "Lettre de motivation", price: 500, icon: "📄",
+    fields: [
+      { id: "poste", label: "Poste ou formation visé", type: "text" },
+      { id: "entreprise", label: "Entreprise / établissement", type: "text" },
+      { id: "qualites", label: "Vos principales qualités / expériences", type: "textarea" },
+      { id: "delai", label: "Date limite (optionnel)", type: "text", optional: true }
+    ]},
+  { id: "cv", label: "CV professionnel", price: 1000, icon: "🪪",
+    fields: [
+      { id: "identite", label: "Nom complet et contact", type: "text" },
+      { id: "poste", label: "Poste ou domaine recherché", type: "text" },
+      { id: "experiences", label: "Vos 3 dernières expériences", type: "textarea" },
+      { id: "diplomes", label: "Diplômes / formations", type: "textarea" },
+      { id: "competences", label: "Compétences clés", type: "text" }
+    ]},
+  { id: "discours", label: "Discours", price: 1500, icon: "🎤",
+    fields: [
+      { id: "occasion", label: "Quelle est l'occasion ?", type: "text" },
+      { id: "orateur", label: "Qui parle ?", type: "text" },
+      { id: "personnes", label: "Personnes concernées (noms)", type: "text" },
+      { id: "ton", label: "Ton souhaité", type: "text" },
+      { id: "duree", label: "Durée approximative", type: "text" }
+    ]},
+  { id: "compte-rendu", label: "Compte-rendu de réunion", price: 1000, icon: "📝",
+    fields: [
+      { id: "sujet", label: "Sujet de la réunion", type: "text" },
+      { id: "participants", label: "Date et participants", type: "text" },
+      { id: "points", label: "Points discutés", type: "textarea" },
+      { id: "decisions", label: "Décisions / actions à suivre", type: "textarea" }
+    ]},
+  { id: "courrier", label: "Courrier professionnel", price: 500, icon: "✉️",
+    fields: [
+      { id: "objet", label: "Objet du courrier", type: "text" },
+      { id: "destinataire", label: "Destinataire", type: "text" },
+      { id: "contenu", label: "Contenu principal (vos mots)", type: "textarea" },
+      { id: "ton", label: "Ton souhaité", type: "text" }
+    ]}
+];
+
+let currentDoc = null;
+let selectedPayMode = null;
+
+function renderDocList() {
+  const container = document.getElementById("doc-list");
+  container.innerHTML = "";
+  DOCUMENTS.forEach(doc => {
+    const btn = document.createElement("button");
+    btn.className = "doc-btn";
+    btn.innerHTML = `<span>${doc.icon} ${doc.label}</span><span class="price">${doc.price} F</span>`;
+    btn.onclick = () => openForm(doc);
+    container.appendChild(btn);
+  });
+}
+
+function openForm(doc) {
+  currentDoc = doc;
+  selectedPayMode = null;
+  document.getElementById("form-title").textContent = doc.label + " — " + doc.price + " F";
+  const fieldsDiv = document.getElementById("form-fields");
+  fieldsDiv.innerHTML = "";
+  doc.fields.forEach(f => {
+    const label = document.createElement("label");
+    label.textContent = f.label + (f.optional ? " (optionnel)" : "");
+    fieldsDiv.appendChild(label);
+    const input = f.type === "textarea" ? document.createElement("textarea") : document.createElement("input");
+    if (f.type === "textarea") input.rows = 3;
+    input.id = "field-" + f.id;
+    fieldsDiv.appendChild(input);
+  });
+  document.querySelectorAll(".paymode button").forEach(b => b.classList.remove("selected"));
+  showScreen("screen-form");
+}
+
+const PAY_NUMBERS = { tmoney: "90 00 00 00", flooz: "70 00 00 00" }; // remplacés par le vrai numéro renvoyé par le serveur
+
+function selectPay(mode) {
+  selectedPayMode = mode;
+  document.querySelectorAll(".paymode button").forEach(b => {
+    b.classList.toggle("selected", b.dataset.mode === mode);
+  });
+  const box = document.getElementById("pay-instructions");
+  box.classList.remove("hidden");
+  box.textContent = `Envoyez ${currentDoc.price} F au ${PAY_NUMBERS[mode]} (${mode === "tmoney" ? "TMoney" : "Flooz"}), puis collez le code de transaction reçu par SMS ci-dessous.`;
+}
+
+function showScreen(id) {
+  ["screen-select","screen-form","screen-loading","screen-result"].forEach(s => {
+    document.getElementById(s).classList.toggle("hidden", s !== id);
+  });
+}
+
+function goBack() { showScreen("screen-select"); }
+function resetApp() { currentDoc = null; showScreen("screen-select"); }
+
+let pollTimer = null;
+
+async function submitOrder() {
+  const errorBox = document.getElementById("form-error");
+  errorBox.classList.add("hidden");
+
+  const answers = {};
+  let missing = false;
+  currentDoc.fields.forEach(f => {
+    const val = document.getElementById("field-" + f.id).value.trim();
+    if (!val && !f.optional) missing = true;
+    answers[f.label] = val;
+  });
+  const transactionCode = document.getElementById("field-transactionCode").value.trim();
+  const phone = document.getElementById("field-phone").value.trim();
+
+  if (missing) {
+    errorBox.textContent = "Merci de remplir tous les champs obligatoires.";
+    errorBox.classList.remove("hidden");
+    return;
+  }
+  if (!selectedPayMode) {
+    errorBox.textContent = "Merci de choisir un mode de paiement.";
+    errorBox.classList.remove("hidden");
+    return;
+  }
+  if (!transactionCode) {
+    errorBox.textContent = "Merci d'entrer le code de transaction reçu après paiement.";
+    errorBox.classList.remove("hidden");
+    return;
+  }
+
+  showScreen("screen-loading");
+  document.getElementById("loading-text").textContent = "Commande envoyée. En attente de confirmation du paiement…";
+
+  try {
+    const orderRes = await fetch("/api/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docType: currentDoc.label, answers, payMode: selectedPayMode, transactionCode, phone })
+    });
+    const orderData = await orderRes.json();
+    if (!orderData.orderId) throw new Error("Impossible d'envoyer la commande");
+
+    pollOrderStatus(orderData.orderId);
+  } catch (err) {
+    showScreen("screen-form");
+    errorBox.textContent = "Une erreur est survenue : " + err.message;
+    errorBox.classList.remove("hidden");
+  }
+}
+
+function pollOrderStatus(orderId) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch("/api/order/" + orderId);
+      const data = await res.json();
+      if (data.status === "done") {
+        clearInterval(pollTimer);
+        document.getElementById("result-text").textContent = data.text;
+        showScreen("screen-result");
+      } else if (data.status === "error") {
+        clearInterval(pollTimer);
+        showScreen("screen-form");
+        const errorBox = document.getElementById("form-error");
+        errorBox.textContent = "La génération a échoué après confirmation du paiement. Merci de réessayer.";
+        errorBox.classList.remove("hidden");
+      }
+      // "pending" ou "confirmed" → on continue d'attendre
+    } catch (e) {
+      // on ignore une erreur réseau ponctuelle et on réessaie au prochain tick
+    }
+  }, 4000);
+}
+
+function downloadResult() {
+  const text = document.getElementById("result-text").textContent;
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = (currentDoc ? currentDoc.id : "document") + ".txt";
+  link.click();
+}
+
+renderDocList();
+</script>
+
+</body>
+</html>
